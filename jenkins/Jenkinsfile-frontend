@@ -29,7 +29,7 @@ pipeline {
         SONAR_PROJECT_KEY = 'crud-frontend'
 
         // ── GitOps ────────────────────────────────────────────────────────
-        GITOPS_REPO       = 'https://github.com/YOUR_ORG/three-tier-gitops.git'
+        GITOPS_REPO       = 'https://github.com/rohankhanal14/three-tier-gitops.git'
         // GITOPS_CREDS      = 'github-gitops-token'
         GITOPS_CREDS      = 'gitops'                 // Jenkins credential ID
         
