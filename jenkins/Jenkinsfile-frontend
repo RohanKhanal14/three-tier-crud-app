@@ -258,12 +258,12 @@ pipeline {
         // 11. UPDATE GITOPS REPO (Helm values → triggers Argo CD)
         // ══════════════════════════════════════════════════════════════════
         stage('Update GitOps Repo') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
+            // when {
+            //     anyOf {
+            //         branch 'main'
+            //         branch 'develop'
+            //     }
+            // }
             steps {
                 withCredentials([
                     usernamePassword(
