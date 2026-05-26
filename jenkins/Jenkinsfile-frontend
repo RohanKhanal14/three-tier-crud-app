@@ -144,7 +144,8 @@ pipeline {
                                 -Dsonar.projectName="Three Tier CRUD Frontend" \\
                                 -Dsonar.sources=src \\
                                 -Dsonar.tests=src/tests \\
-                                -Dsonar.exclusions=node_modules/**,dist/**,coverage/**,public/** \\
+                                -Dsonar.test.inclusions=src/tests/** \\
+                                -Dsonar.exclusions=node_modules/**,dist/**,coverage/**,public/**,src/tests/** \\
                                 -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \\
                                 -Dsonar.sourceEncoding=UTF-8
                         """
