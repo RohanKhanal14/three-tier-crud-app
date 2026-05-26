@@ -30,7 +30,9 @@ pipeline {
 
         // ── GitOps ────────────────────────────────────────────────────────
         GITOPS_REPO       = 'https://github.com/YOUR_ORG/three-tier-gitops.git'
-        GITOPS_CREDS      = 'github-gitops-token'                   // Jenkins credential ID
+        // GITOPS_CREDS      = 'github-gitops-token'
+        GITOPS_CREDS      = 'gitops'                 // Jenkins credential ID
+        
         GITOPS_BRANCH     = 'main'
         HELM_VALUES_FILE  = 'charts/three-tier-app/values-staging.yaml'
 
@@ -267,7 +269,7 @@ pipeline {
             steps {
                 withCredentials([
                     usernamePassword(
-                        credentialsId: "${gitops}",
+                        credentialsId: "${GITOPS_CREDS}",
                         usernameVariable: 'GIT_USER',
                         passwordVariable: 'GIT_TOKEN'
                     )
