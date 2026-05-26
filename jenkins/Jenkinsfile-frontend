@@ -302,12 +302,12 @@ pipeline {
         // 12. OWASP ZAP DAST (Baseline Scan)
         // ══════════════════════════════════════════════════════════════════
         stage('OWASP ZAP DAST') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
+            // when {
+            //     anyOf {
+            //         branch 'main'
+            //         branch 'develop'
+            //     }
+            // }
             steps {
                 sh """
                     mkdir -p ${WORKSPACE}/zap-reports
