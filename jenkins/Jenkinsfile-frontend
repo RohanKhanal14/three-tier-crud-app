@@ -343,75 +343,146 @@ pipeline {
     // ══════════════════════════════════════════════════════════════════════
     // POST-BUILD ACTIONS
     // ══════════════════════════════════════════════════════════════════════
-    post {
-        always {
-            // Clean up Docker images to free disk space on agent
-            sh """
-                docker rmi ${IMAGE_FULL}:${IMAGE_TAG} || true
-                docker rmi ${IMAGE_FULL}:latest || true
-                docker system prune -f --filter "until=24h" || true
-            """
-            cleanWs()
-        }
+    // post {
+    //     always {
+    //         // Clean up Docker images to free disk space on agent
+    //         sh """
+    //             docker rmi ${IMAGE_FULL}:${IMAGE_TAG} || true
+    //             docker rmi ${IMAGE_FULL}:latest || true
+    //             docker system prune -f --filter "until=24h" || true
+    //         """
+    //         cleanWs()
+    //     }
 
-        success {
-            echo "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED"
-            emailext(
-                subject: "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
-                body: """
-                    <h2 style="color: #28a745;">✅ ${SERVICE_LABEL} Build Succeeded</h2>
-                    <table style="border-collapse: collapse; font-family: monospace;">
-                        <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
-                        <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
-                        <tr><td><b>Image Tag:</b></td><td>${IMAGE_TAG}</td></tr>
-                        <tr><td><b>Image Repo:</b></td><td>${IMAGE_FULL}</td></tr>
-                        <tr><td><b>Registry:</b></td><td>${REGISTRY_TYPE}</td></tr>
-                        <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
-                    </table>
-                    <h3>Reports</h3>
-                    <ul>
-                        <li><a href="${BUILD_URL}artifact/frontend/coverage/index.html">Coverage Report</a></li>
-                        <li><a href="${BUILD_URL}ZAP_20Frontend_20DAST_20Report/">ZAP DAST Report</a></li>
-                        <li><a href="${BUILD_URL}console">Console Output</a></li>
-                    </ul>
-                    <p>GitOps repo updated → Argo CD will auto-sync within 3 minutes.</p>
-                """,
-                mimeType: 'text/html',
-                to: "${EMAIL_RECIPIENTS}"
-            )
-        }
+    //     success {
+    //         echo "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED"
+    //         emailext(
+    //             subject: "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
+    //             body: """
+    //                 <h2 style="color: #28a745;">✅ ${SERVICE_LABEL} Build Succeeded</h2>
+    //                 <table style="border-collapse: collapse; font-family: monospace;">
+    //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
+    //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
+    //                     <tr><td><b>Image Tag:</b></td><td>${IMAGE_TAG}</td></tr>
+    //                     <tr><td><b>Image Repo:</b></td><td>${IMAGE_FULL}</td></tr>
+    //                     <tr><td><b>Registry:</b></td><td>${REGISTRY_TYPE}</td></tr>
+    //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
+    //                 </table>
+    //                 <h3>Reports</h3>
+    //                 <ul>
+    //                     <li><a href="${BUILD_URL}artifact/frontend/coverage/index.html">Coverage Report</a></li>
+    //                     <li><a href="${BUILD_URL}ZAP_20Frontend_20DAST_20Report/">ZAP DAST Report</a></li>
+    //                     <li><a href="${BUILD_URL}console">Console Output</a></li>
+    //                 </ul>
+    //                 <p>GitOps repo updated → Argo CD will auto-sync within 3 minutes.</p>
+    //             """,
+    //             mimeType: 'text/html',
+    //             to: "${EMAIL_RECIPIENTS}"
+    //         )
+    //     }
 
-        failure {
-            echo "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED"
-            emailext(
-                subject: "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
-                body: """
-                    <h2 style="color: #dc3545;">❌ ${SERVICE_LABEL} Build Failed</h2>
-                    <table style="border-collapse: collapse; font-family: monospace;">
-                        <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
-                        <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
-                        <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
-                        <tr><td><b>Failed Stage:</b></td><td>Check console output</td></tr>
-                    </table>
-                    <h3>Debugging Links</h3>
-                    <ul>
-                        <li><a href="${BUILD_URL}console">Console Output (full log)</a></li>
-                        <li><a href="${BUILD_URL}artifact/">Build Artifacts (Trivy / ZAP reports)</a></li>
-                    </ul>
-                    <h3>Common Failure Causes</h3>
-                    <ul>
-                        <li><b>npm ci:</b> Missing package-lock.json or network timeout</li>
-                        <li><b>Unit Tests:</b> Component rendering failures — check test output</li>
-                        <li><b>SonarQube:</b> Quality gate failed — open SonarQube dashboard</li>
-                        <li><b>Trivy FS:</b> HIGH/CRITICAL CVEs in dependencies — run <code>npm audit</code></li>
-                        <li><b>Trivy Image:</b> OS-level CVEs in nginx:alpine — update base image</li>
-                        <li><b>Docker Push:</b> Registry authentication failure</li>
-                        <li><b>ZAP:</b> Missing security headers — check nginx.conf</li>
-                    </ul>
-                """,
-                mimeType: 'text/html',
-                to: "${EMAIL_RECIPIENTS}"
-            )
-        }
-    }
+    //     failure {
+    //         echo "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED"
+    //         emailext(
+    //             subject: "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
+    //             body: """
+    //                 <h2 style="color: #dc3545;">❌ ${SERVICE_LABEL} Build Failed</h2>
+    //                 <table style="border-collapse: collapse; font-family: monospace;">
+    //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
+    //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
+    //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
+    //                     <tr><td><b>Failed Stage:</b></td><td>Check console output</td></tr>
+    //                 </table>
+    //                 <h3>Debugging Links</h3>
+    //                 <ul>
+    //                     <li><a href="${BUILD_URL}console">Console Output (full log)</a></li>
+    //                     <li><a href="${BUILD_URL}artifact/">Build Artifacts (Trivy / ZAP reports)</a></li>
+    //                 </ul>
+    //                 <h3>Common Failure Causes</h3>
+    //                 <ul>
+    //                     <li><b>npm ci:</b> Missing package-lock.json or network timeout</li>
+    //                     <li><b>Unit Tests:</b> Component rendering failures — check test output</li>
+    //                     <li><b>SonarQube:</b> Quality gate failed — open SonarQube dashboard</li>
+    //                     <li><b>Trivy FS:</b> HIGH/CRITICAL CVEs in dependencies — run <code>npm audit</code></li>
+    //                     <li><b>Trivy Image:</b> OS-level CVEs in nginx:alpine — update base image</li>
+    //                     <li><b>Docker Push:</b> Registry authentication failure</li>
+    //                     <li><b>ZAP:</b> Missing security headers — check nginx.conf</li>
+    //                 </ul>
+    //             """,
+    //             mimeType: 'text/html',
+    //             to: "${EMAIL_RECIPIENTS}"
+    //         )
+    //     }
+    // }
+    // post {
+    //     always {
+    //         // Clean up Docker images to free disk space on agent
+    //         sh """
+    //             docker rmi ${IMAGE_FULL}:${IMAGE_TAG} || true
+    //             docker rmi ${IMAGE_FULL}:latest || true
+    //             docker system prune -f --filter "until=24h" || true
+    //         """
+    //         cleanWs()
+    //     }
+
+    //     success {
+    //         echo "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED"
+    //         emailext(
+    //             subject: "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
+    //             body: """
+    //                 <h2 style="color: #28a745;">✅ ${SERVICE_LABEL} Build Succeeded</h2>
+    //                 <table style="border-collapse: collapse; font-family: monospace;">
+    //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
+    //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
+    //                     <tr><td><b>Image Tag:</b></td><td>${IMAGE_TAG}</td></tr>
+    //                     <tr><td><b>Image Repo:</b></td><td>${IMAGE_FULL}</td></tr>
+    //                     <tr><td><b>Registry:</b></td><td>${REGISTRY_TYPE}</td></tr>
+    //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
+    //                 </table>
+    //                 <h3>Reports</h3>
+    //                 <ul>
+    //                     <li><a href="${BUILD_URL}artifact/frontend/coverage/index.html">Coverage Report</a></li>
+    //                     <li><a href="${BUILD_URL}ZAP_20Frontend_20DAST_20Report/">ZAP DAST Report</a></li>
+    //                     <li><a href="${BUILD_URL}console">Console Output</a></li>
+    //                 </ul>
+    //                 <p>GitOps repo updated → Argo CD will auto-sync within 3 minutes.</p>
+    //             """,
+    //             mimeType: 'text/html',
+    //             to: "${EMAIL_RECIPIENTS}"
+    //         )
+    //     }
+
+    //     failure {
+    //         echo "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED"
+    //         emailext(
+    //             subject: "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
+    //             body: """
+    //                 <h2 style="color: #dc3545;">❌ ${SERVICE_LABEL} Build Failed</h2>
+    //                 <table style="border-collapse: collapse; font-family: monospace;">
+    //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
+    //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
+    //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
+    //                     <tr><td><b>Failed Stage:</b></td><td>Check console output</td></tr>
+    //                 </table>
+    //                 <h3>Debugging Links</h3>
+    //                 <ul>
+    //                     <li><a href="${BUILD_URL}console">Console Output (full log)</a></li>
+    //                     <li><a href="${BUILD_URL}artifact/">Build Artifacts (Trivy / ZAP reports)</a></li>
+    //                 </ul>
+    //                 <h3>Common Failure Causes</h3>
+    //                 <ul>
+    //                     <li><b>npm ci:</b> Missing package-lock.json or network timeout</li>
+    //                     <li><b>Unit Tests:</b> Component rendering failures — check test output</li>
+    //                     <li><b>SonarQube:</b> Quality gate failed — open SonarQube dashboard</li>
+    //                     <li><b>Trivy FS:</b> HIGH/CRITICAL CVEs in dependencies — run <code>npm audit</code></li>
+    //                     <li><b>Trivy Image:</b> OS-level CVEs in nginx:alpine — update base image</li>
+    //                     <li><b>Docker Push:</b> Registry authentication failure</li>
+    //                     <li><b>ZAP:</b> Missing security headers — check nginx.conf</li>
+    //                 </ul>
+    //             """,
+    //             mimeType: 'text/html',
+    //             to: "${EMAIL_RECIPIENTS}"
+    //         )
+    //     }
+    // }
 }
