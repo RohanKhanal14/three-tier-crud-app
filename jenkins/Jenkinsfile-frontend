@@ -317,6 +317,7 @@ pipeline {
 
                     docker run --rm \\
                         --network host \\
+                        -u \$(id -u):\$(id -g) \\
                         -v ${WORKSPACE}/zap-reports:/zap/wrk/:rw \\
                         -t ${ZAP_IMAGE} \\
                         zap-baseline.py \\
