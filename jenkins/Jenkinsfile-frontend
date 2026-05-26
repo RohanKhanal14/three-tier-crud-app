@@ -50,7 +50,7 @@ pipeline {
 
     options {
         timeout(time: 45, unit: 'MINUTES')
-        disableConcurrentBuilds()creds
+        // disableConcurrentBuilds()creds
         buildDiscarder(logRotator(numToKeepStr: '20'))
         timestamps()
         ansiColor('xterm')
