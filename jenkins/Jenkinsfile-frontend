@@ -37,7 +37,7 @@ pipeline {
         HELM_VALUES_FILE  = 'charts/three-tier-app/values-staging.yaml'
 
         // ── OWASP ZAP ────────────────────────────────────────────────────
-        ZAP_TARGET_URL    = 'http://localhost:8080'                  // port-forwarded staging frontend
+        ZAP_TARGET_URL    = 'http://localhost:3000'                  // ⚠ Must point to YOUR app, NOT Jenkins (8080=Jenkins!)
         ZAP_IMAGE         = 'ghcr.io/zaproxy/zaproxy:stable'
 
         // ── Build-time config ─────────────────────────────────────────────
@@ -313,6 +313,7 @@ pipeline {
             steps {
                 sh """
                     mkdir -p ${WORKSPACE}/zap-reports
+                    chmod 777 ${WORKSPACE}/zap-reports
 
                     docker run --rm \\
                         --network host \\
