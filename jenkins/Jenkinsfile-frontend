@@ -314,10 +314,10 @@ pipeline {
                 sh """
                     mkdir -p ${WORKSPACE}/zap-reports
                     chmod 777 ${WORKSPACE}/zap-reports
+                    chown 1000:1000 ${WORKSPACE}/zap-reports
 
                     docker run --rm \\
                         --network host \\
-                        -u \$(id -u):\$(id -g) \\
                         -v ${WORKSPACE}/zap-reports:/zap/wrk/:rw \\
                         -t ${ZAP_IMAGE} \\
                         zap-baseline.py \\
