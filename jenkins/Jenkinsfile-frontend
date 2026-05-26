@@ -267,7 +267,7 @@ pipeline {
             steps {
                 withCredentials([
                     usernamePassword(
-                        credentialsId: "${GITOPS_CREDS}",
+                        credentialsId: "${gitops}",
                         usernameVariable: 'GIT_USER',
                         passwordVariable: 'GIT_TOKEN'
                     )
