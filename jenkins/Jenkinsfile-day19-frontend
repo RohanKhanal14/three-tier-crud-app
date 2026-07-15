@@ -167,12 +167,18 @@ pipeline {
             steps {
                 dir("${SERVICE_DIR}") {
                     sh """
-                        whoami \\
-                        docker build \\
-                            --no-cache \\
-                            -t ${DOCKERHUB_REPO}:${IMAGE_TAG} \\
-                            -t ${DOCKERHUB_REPO}:latest \\
-                            .
+                        whoami
+                        pwd
+                        ls -la
+                        echo "Building Docker image: ${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                        echo "Dockerfile content:"
+                        cat Dockerfile
+                        echo "Context directory content:"
+                        // docker build \\
+                        //     --no-cache \\
+                        //     -t ${DOCKERHUB_REPO}:${IMAGE_TAG} \\
+                        //     -t ${DOCKERHUB_REPO}:latest \\
+                        //     .
                     """
                 }
             }
