@@ -26,7 +26,10 @@ pipeline {
 
         // ── OWASP ZAP ────────────────────────────────────────────────────
         // ZAP_TARGET_URL    = 'http://localhost:3000'                  // ⚠ Must point to YOUR app, NOT Jenkins (8080=Jenkins!)
-        // ZAP_IMAGE         = 'ghcr.io/zaproxy/zaproxy:stable'
+        ZAP_IMAGE         = 'ghcr.io/zaproxy/zaproxy:stable'
+        ZAP_CONTAINER   = "zap-target-${env.BUILD_NUMBER}"
+        ZAP_TARGET_PORT = '8081'   // host port to expose the frontend on, avoid clashing with Jenkins(8080)/SonarQube(9000)
+        // ZAP_TARGET_URL  = "http://host.docker.internal:${ZAP_TARGET_PORT}"
 
         // ── Build-time config ─────────────────────────────────────────────
         // VITE_API_BASE_URL = 'http://staging.crud.local/api'         // baked into React build
@@ -219,6 +222,60 @@ pipeline {
             }
         }
 
+        // ══════════════════════════════════════════════════════════════════
+// 9b. OWASP ZAP DAST (Baseline Scan)
+// ══════════════════════════════════════════════════════════════════
+stage('OWASP ZAP DAST') {
+    steps {
+        script {
+            sh """
+                mkdir -p ${WORKSPACE}/zap-reports
+                chmod 777 ${WORKSPACE}/zap-reports
+
+                # Run the freshly built image so ZAP has something to attack
+                docker rm -f ${ZAP_CONTAINER} || true
+                docker run -d --name ${ZAP_CONTAINER} \\
+                    -p ${ZAP_TARGET_PORT}:80 \\
+                    ${DOCKERHUB_REPO}:${IMAGE_TAG}
+
+                # Give the app a moment to come up
+                echo "Waiting for target to respond..."
+                for i in \$(seq 1 15); do
+                    curl -sf http://localhost:${ZAP_TARGET_PORT} > /dev/null && break
+                    sleep 2
+                done
+            """
+
+            sh """
+                docker run --rm \\
+                    --network host \\
+                    -v ${WORKSPACE}/zap-reports:/zap/wrk/:rw \\
+                    -t ${ZAP_IMAGE} \\
+                    zap-baseline.py \\
+                        -t http://localhost:${ZAP_TARGET_PORT} \\
+                        -r zap-frontend-report.html \\
+                        -J zap-frontend-report.json \\
+                        -w zap-frontend-report.md \\
+                        -I || true
+            """
+            // -I = don't fail build on WARN-level findings, only on FAIL-level
+        }
+    }
+    post {
+        always {
+            sh "docker rm -f ${ZAP_CONTAINER} || true"
+            archiveArtifacts artifacts: 'zap-reports/**', allowEmptyArchive: true
+            publishHTML(target: [
+                reportDir:             'zap-reports',
+                reportFiles:           'zap-frontend-report.html',
+                reportName:            'ZAP Frontend DAST Report',
+                keepAll:               true,
+                alwaysLinkToLastBuild: true,
+                allowMissing:          true
+            ])
+        }
+    }
+}
         // ══════════════════════════════════════════════════════════════════
         // 11. UPDATE GITOPS REPO (Helm values → triggers Argo CD)
         // ══════════════════════════════════════════════════════════════════
