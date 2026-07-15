@@ -58,8 +58,8 @@ pipeline {
                     echo "  Service:    ${SERVICE_LABEL}"
                     echo "  Branch:     ${env.BRANCH_NAME ?: env.GIT_BRANCH}"
                     echo "  Commit:     ${env.GIT_COMMIT?.take(8)}"
-                    echo "  Image:      ${IMAGE_FULL}:${IMAGE_TAG}"
                     echo "  Build Number:      ${env.BUILD_NUMBER}"
+                    echo "  Image:      ${DOCKERHUB_REPO}:${IMAGE_TAG}"
                     echo "═══════════════════════════════════════════════"
                
                 // // Verify required tools on the agent
@@ -169,8 +169,8 @@ pipeline {
                     sh """
                         docker build \\
                             --no-cache \\
-                            -t ${IMAGE_FULL}:${IMAGE_TAG} \\
-                            -t ${IMAGE_FULL}:latest \\
+                            -t ${DOCKERHUB_REPO}:${IMAGE_TAG} \\
+                            -t ${DOCKERHUB_REPO}:latest \\
                             .
                     """
                 }
@@ -189,7 +189,7 @@ pipeline {
                         --exit-code 1 \\
                         --no-progress \\
                         --format table \\
-                        ${IMAGE_FULL}:${IMAGE_TAG}
+                        ${DOCKERHUB_REPO}:${IMAGE_TAG}
                 """
             }
         }
@@ -210,8 +210,8 @@ pipeline {
                         ]) {
                             sh '''
                                 echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                                docker push ${IMAGE_FULL}:${IMAGE_TAG}
-                                docker push ${IMAGE_FULL}:latest
+                                docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
+                                docker push ${DOCKERHUB_REPO}:latest
                             '''
                         }
                     }
@@ -246,14 +246,14 @@ pipeline {
         //                 git checkout ${GITOPS_BRANCH}
 
         //                 # Update frontend image tag in staging values
-        //                 yq eval '.frontend.image.repository = "${IMAGE_FULL}"' -i ${HELM_VALUES_FILE}
+        //                 yq eval '.frontend.image.repository = "${DOCKERHUB_REPO}"' -i ${HELM_VALUES_FILE}
         //                 yq eval '.frontend.image.tag = "${IMAGE_TAG}"' -i ${HELM_VALUES_FILE}
 
         //                 # Commit and push
         //                 git config user.email "jenkins@ci.local"
         //                 git config user.name "Jenkins CI"
         //                 git add ${HELM_VALUES_FILE}
-        //                 git commit -m "ci(frontend): update image to ${IMAGE_FULL}:${IMAGE_TAG} [build #${BUILD_NUMBER}]" || echo "No changes to commit"
+        //                 git commit -m "ci(frontend): update image to ${DOCKERHUB_REPO}:${IMAGE_TAG} [build #${BUILD_NUMBER}]" || echo "No changes to commit"
         //                 git push origin ${GITOPS_BRANCH}
 
         //                 cd ..
@@ -315,8 +315,8 @@ pipeline {
     //     always {
     //         // Clean up Docker images to free disk space on agent
     //         sh """
-    //             docker rmi ${IMAGE_FULL}:${IMAGE_TAG} || true
-    //             docker rmi ${IMAGE_FULL}:latest || true
+    //             docker rmi ${DOCKERHUB_REPO}:${IMAGE_TAG} || true
+    //             docker rmi ${DOCKERHUB_REPO}:latest || true
     //             docker system prune -f --filter "until=24h" || true
     //         """
     //         cleanWs()
@@ -332,7 +332,7 @@ pipeline {
     //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
     //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
     //                     <tr><td><b>Image Tag:</b></td><td>${IMAGE_TAG}</td></tr>
-    //                     <tr><td><b>Image Repo:</b></td><td>${IMAGE_FULL}</td></tr>
+    //                     <tr><td><b>Image Repo:</b></td><td>${DOCKERHUB_REPO}</td></tr>
     //                     <tr><td><b>Registry:</b></td><td>${REGISTRY_TYPE}</td></tr>
     //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
     //                 </table>
@@ -386,8 +386,8 @@ pipeline {
     //     always {
     //         // Clean up Docker images to free disk space on agent
     //         sh """
-    //             docker rmi ${IMAGE_FULL}:${IMAGE_TAG} || true
-    //             docker rmi ${IMAGE_FULL}:latest || true
+    //             docker rmi ${DOCKERHUB_REPO}:${IMAGE_TAG} || true
+    //             docker rmi ${DOCKERHUB_REPO}:latest || true
     //             docker system prune -f --filter "until=24h" || true
     //         """
     //         cleanWs()
@@ -403,7 +403,7 @@ pipeline {
     //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
     //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
     //                     <tr><td><b>Image Tag:</b></td><td>${IMAGE_TAG}</td></tr>
-    //                     <tr><td><b>Image Repo:</b></td><td>${IMAGE_FULL}</td></tr>
+    //                     <tr><td><b>Image Repo:</b></td><td>${DOCKERHUB_REPO}</td></tr>
     //                     <tr><td><b>Registry:</b></td><td>${REGISTRY_TYPE}</td></tr>
     //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
     //                 </table>
