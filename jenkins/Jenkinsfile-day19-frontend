@@ -167,6 +167,7 @@ pipeline {
             steps {
                 dir("${SERVICE_DIR}") {
                     sh """
+                        whoami \\
                         docker build \\
                             --no-cache \\
                             -t ${DOCKERHUB_REPO}:${IMAGE_TAG} \\
