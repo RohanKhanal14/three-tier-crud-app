@@ -28,6 +28,7 @@ pipeline {
         ZAP_CONTAINER   = "zap-target-${env.BUILD_NUMBER}"
         ZAP_TARGET_PORT = '3000'   // host port to expose the frontend on, avoid clashing with Jenkins(8080)/SonarQube(9000)
         // ZAP_TARGET_URL  = "http://host.docker.internal:${ZAP_TARGET_PORT}"
+        
 
         // ── Build-time config ─────────────────────────────────────────────
         // VITE_API_BASE_URL = 'http://staging.crud.local/api'         // baked into React build
@@ -221,57 +222,254 @@ pipeline {
 
         // ══════════════════════════════════════════════════════════════════
         // 9b. OWASP ZAP DAST (Baseline Scan)
-        // ══════════════════════════════════════════════════════════════════
-        stage('OWASP ZAP DAST') {
-            steps {
-                script {
-                    sh """
-                        mkdir -p ${WORKSPACE}/zap-reports
-                        chmod 777 ${WORKSPACE}/zap-reports
+stage('OWASP ZAP DAST') {
+    steps {
+        script {
+            /*
+             * Pull from official GHCR first.
+             * Fall back to the official Docker Hub image only if GHCR fails.
+             */
+            def selectedZapImage = sh(
+                label: 'Pull official ZAP image',
+                returnStdout: true,
+                script: '''
+                    set -eu
 
-                        # Run the freshly built image so ZAP has something to attack
-                        docker rm -f ${ZAP_CONTAINER} || true
-                        docker run -d --name ${ZAP_CONTAINER} \\
-                            -p ${ZAP_TARGET_PORT}:8080 \\
-                            ${DOCKERHUB_REPO}:${IMAGE_TAG}
+                    PRIMARY_IMAGE="ghcr.io/zaproxy/zaproxy:stable"
+                    FALLBACK_IMAGE="zaproxy/zap-stable:latest"
 
-                        # Give the app a moment to come up
-                        echo "Waiting for target to respond..."
-                        for i in \$(seq 1 15); do
-                            curl -sf http://localhost:${ZAP_TARGET_PORT} > /dev/null && break
-                            sleep 2
-                        done
-                    """
+                    if docker pull "$PRIMARY_IMAGE" >&2; then
+                        printf '%s' "$PRIMARY_IMAGE"
+                    else
+                        echo "GHCR pull failed; trying the official Docker Hub image..." >&2
+                        docker pull "$FALLBACK_IMAGE" >&2
+                        printf '%s' "$FALLBACK_IMAGE"
+                    fi
+                '''
+            ).trim()
 
-                    sh """
-                        docker run --rm \\
-                            --network host \\
-                            -v ${WORKSPACE}/zap-reports:/zap/wrk/:rw \\
-                            -t ${ZAP_IMAGE} \\
-                            zap-baseline.py \\
-                                -t http://localhost:${ZAP_TARGET_PORT} \\
-                                -r zap-frontend-report.html \\
-                                -J zap-frontend-report.json \\
-                                -w zap-frontend-report.md \\
-                                -I || true
-                    """
-                    // -I = don't fail build on WARN-level findings, only on FAIL-level
-                }
-            }
-            post {
-                always {
-                    sh "docker rm -f ${ZAP_CONTAINER} || true"
-                    archiveArtifacts artifacts: 'zap-reports/**', allowEmptyArchive: true
-                    publishHTML(target: [
-                        reportDir:             'zap-reports',
-                        reportFiles:           'zap-frontend-report.html',
-                        reportName:            'ZAP Frontend DAST Report',
-                        keepAll:               true,
-                        alwaysLinkToLastBuild: true,
-                        allowMissing:          true
-                    ])
-                }
+            withEnv([
+                "SELECTED_ZAP_IMAGE=${selectedZapImage}",
+                "ZAP_BUILD_LABEL=ci.zap.build=${env.BUILD_TAG}",
+                "ZAP_TARGET_IMAGE=${env.DOCKERHUB_REPO}:${env.IMAGE_TAG}"
+            ]) {
+                sh '''
+                    set -eu
+
+                    SAFE_BUILD_TAG=$(
+                        printf '%s' "$BUILD_TAG" |
+                        tr -c '[:alnum:]_.-' '-' |
+                        cut -c1-80
+                    )
+
+                    TARGET_CONTAINER="zap-target-${SAFE_BUILD_TAG}"
+                    ZAP_NETWORK="zap-network-${SAFE_BUILD_TAG}"
+                    TARGET_URL="http://${TARGET_CONTAINER}:8080"
+                    REPORT_DIR="${WORKSPACE}/zap-reports"
+
+                    echo "ZAP image:  ${SELECTED_ZAP_IMAGE}"
+                    echo "Target:     ${TARGET_URL}"
+                    echo "Report dir: ${REPORT_DIR}"
+
+                    # Clean leftovers from a previous execution of this build.
+                    for container_id in $(
+                        docker ps -aq --filter "label=${ZAP_BUILD_LABEL}"
+                    ); do
+                        docker rm -f "$container_id" || true
+                    done
+
+                    for network_id in $(
+                        docker network ls -q --filter "label=${ZAP_BUILD_LABEL}"
+                    ); do
+                        docker network rm "$network_id" || true
+                    done
+
+                    mkdir -p "$REPORT_DIR"
+
+                    /*
+                     * Prepare the report directory without chmod 777.
+                     * Determine the UID/GID used by the selected ZAP image.
+                     */
+                    ZAP_UID=$(
+                        docker run --rm \
+                            --entrypoint sh \
+                            "$SELECTED_ZAP_IMAGE" \
+                            -c 'id -u'
+                    )
+
+                    ZAP_GID=$(
+                        docker run --rm \
+                            --entrypoint sh \
+                            "$SELECTED_ZAP_IMAGE" \
+                            -c 'id -g'
+                    )
+
+                    docker run --rm \
+                        --user 0:0 \
+                        -v "$REPORT_DIR:/zap/wrk/:rw" \
+                        --entrypoint sh \
+                        "$SELECTED_ZAP_IMAGE" \
+                        -c "
+                            find /zap/wrk -mindepth 1 -maxdepth 1 \
+                                -exec rm -rf {} +;
+                            chown -R ${ZAP_UID}:${ZAP_GID} /zap/wrk;
+                            chmod 0775 /zap/wrk
+                        "
+
+                    # Create an isolated network for the target and scanner.
+                    docker network create \
+                        --label "$ZAP_BUILD_LABEL" \
+                        "$ZAP_NETWORK"
+
+                    # Start the freshly built application image.
+                    docker run -d \
+                        --name "$TARGET_CONTAINER" \
+                        --label "$ZAP_BUILD_LABEL" \
+                        --network "$ZAP_NETWORK" \
+                        "$ZAP_TARGET_IMAGE"
+
+                    echo "Waiting for ${TARGET_URL} to respond..."
+
+                    /*
+                     * Perform the readiness check from inside the same Docker
+                     * network that ZAP will use.
+                     */
+                    if ! docker run --rm \
+                        --network "$ZAP_NETWORK" \
+                        -e TARGET_URL="$TARGET_URL" \
+                        --entrypoint sh \
+                        "$SELECTED_ZAP_IMAGE" \
+                        -c '
+                            attempt=1
+
+                            while [ "$attempt" -le 30 ]; do
+                                if curl -fsS \
+                                    --max-time 3 \
+                                    "$TARGET_URL" >/dev/null; then
+                                    echo "Target is ready."
+                                    exit 0
+                                fi
+
+                                echo "Attempt ${attempt}/30: target not ready"
+                                attempt=$((attempt + 1))
+                                sleep 2
+                            done
+
+                            exit 1
+                        '
+                    then
+                        echo "Target application failed its readiness check."
+                        docker logs "$TARGET_CONTAINER" || true
+                        exit 1
+                    fi
+
+                    /*
+                     * Run the baseline scan.
+                     *
+                     * -I allows warning-level findings without failing the build.
+                     * Do not add "|| true", because that would also hide actual
+                     * scan failures and Docker/runtime errors.
+                     */
+                    set +e
+
+                    docker run --rm \
+                        --label "$ZAP_BUILD_LABEL" \
+                        --network "$ZAP_NETWORK" \
+                        -v "$REPORT_DIR:/zap/wrk/:rw" \
+                        "$SELECTED_ZAP_IMAGE" \
+                        zap-baseline.py \
+                            -t "$TARGET_URL" \
+                            -r zap-frontend-report.html \
+                            -J zap-frontend-report.json \
+                            -w zap-frontend-report.md \
+                            -T 10 \
+                            -j \
+                            --client-spider \
+                            -I
+
+                    ZAP_EXIT_CODE=$?
+
+                    set -e
+
+                    # Return report ownership to the Jenkins user.
+                    JENKINS_UID=$(id -u)
+                    JENKINS_GID=$(id -g)
+
+                    docker run --rm \
+                        --user 0:0 \
+                        -v "$REPORT_DIR:/zap/wrk/:rw" \
+                        --entrypoint sh \
+                        "$SELECTED_ZAP_IMAGE" \
+                        -c "
+                            chown -R ${JENKINS_UID}:${JENKINS_GID} /zap/wrk
+                        "
+
+                    case "$ZAP_EXIT_CODE" in
+                        0)
+                            echo "ZAP baseline scan completed successfully."
+                            ;;
+
+                        1)
+                            echo "ZAP found one or more rules configured as FAIL."
+                            exit 1
+                            ;;
+
+                        2)
+                            echo "ZAP found warning-level findings."
+                            echo "Continuing because warning failures are disabled."
+                            ;;
+
+                        3)
+                            echo "ZAP encountered an operational scan error."
+                            exit 3
+                            ;;
+
+                        *)
+                            echo "ZAP/Docker failed with exit code ${ZAP_EXIT_CODE}."
+                            exit "$ZAP_EXIT_CODE"
+                            ;;
+                    esac
+                '''
             }
         }
+    }
+
+    post {
+        always {
+            sh '''
+                set +e
+
+                BUILD_LABEL="ci.zap.build=${BUILD_TAG}"
+
+                # Remove containers before removing their network.
+                for container_id in $(
+                    docker ps -aq --filter "label=${BUILD_LABEL}"
+                ); do
+                    docker rm -f "$container_id"
+                done
+
+                for network_id in $(
+                    docker network ls -q --filter "label=${BUILD_LABEL}"
+                ); do
+                    docker network rm "$network_id"
+                done
+            '''
+
+            archiveArtifacts(
+                artifacts: 'zap-reports/**',
+                allowEmptyArchive: true
+            )
+
+            publishHTML(target: [
+                reportDir:             'zap-reports',
+                reportFiles:           'zap-frontend-report.html',
+                reportName:            'ZAP Frontend DAST Report',
+                keepAll:               true,
+                alwaysLinkToLastBuild: true,
+                allowMissing:          true
+            ])
+        }
+    }
+}
     }
 }
