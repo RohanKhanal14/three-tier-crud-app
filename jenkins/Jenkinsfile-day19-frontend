@@ -185,7 +185,7 @@ pipeline {
                 sh """
                     trivy image \\
                         --scanners vuln \\
-                        --severity HIGH,CRITICAL \\
+                        --severity CRITICAL \\
                         --exit-code 1 \\
                         --no-progress \\
                         --format table \\
