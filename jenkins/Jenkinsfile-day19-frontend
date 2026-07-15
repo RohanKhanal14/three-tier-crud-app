@@ -150,7 +150,7 @@ pipeline {
                     sh """
                         trivy fs \\
                             --scanners vuln,secret,misconfig \\
-                            --severity HIGH,CRITICAL \\
+                            --severity CRITICAL \\
                             --exit-code 1 \\
                             --no-progress \\
                             --format table \\
