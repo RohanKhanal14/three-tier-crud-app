@@ -38,13 +38,13 @@ pipeline {
         IMAGE_TAG         = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(8) ?: 'unknown'}"
     }
 
-    options {
-        timeout(time: 45, unit: 'MINUTES')
-        // disableConcurrentBuilds()creds
-        buildDiscarder(logRotator(numToKeepStr: '20'))
-        timestamps()
-        ansiColor('xterm')
-    }
+    // options {
+    //     timeout(time: 45, unit: 'MINUTES')
+    //     // disableConcurrentBuilds()creds
+    //     buildDiscarder(logRotator(numToKeepStr: '20'))
+    //     timestamps()
+    //     ansiColor('xterm')
+    // }
 
     stages {
         // ══════════════════════════════════════════════════════════════════
@@ -62,15 +62,15 @@ pipeline {
                     echo "  Build Number:      ${env.BUILD_NUMBER}"
                     echo "═══════════════════════════════════════════════"
                
-                // Verify required tools on the agent
-                sh '''
-                    echo "── Tool Versions ──"
-                    node --version
-                    npm --version
-                    docker --version
-                    trivy --version
-                    sonar-scanner --version 
-                '''
+                // // Verify required tools on the agent
+                // sh '''
+                //     echo "── Tool Versions ──"
+                //     node --version
+                //     npm --version
+                //     docker --version
+                //     trivy --version
+                //     sonar-scanner --version 
+                // '''
                 }
             }
         }
@@ -81,7 +81,7 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 dir("${SERVICE_DIR}") {
-                    sh 'npm ci'
+                    sh 'npm i'
                 }
             }
         }
