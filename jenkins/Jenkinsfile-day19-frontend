@@ -1,0 +1,454 @@
+
+pipeline {
+        agent { label 'docker' }
+
+    environment {
+        // ── Service Identity ──────────────────────────────────────────────
+        SERVICE_NAME      = 'frontend'
+        SERVICE_DIR       = 'frontend'
+        SERVICE_LABEL     = 'FRONTEND'
+
+        // ── Registry Toggle: 'dockerhub' or 'ecr' ────────────────────────
+        // REGISTRY_TYPE     = 'dockerhub'
+
+        // Docker Hub settings (used when REGISTRY_TYPE = 'dockerhub')
+        DOCKERHUB_CREDS   = 'docker-hub'                      // Jenkins credential ID
+        DOCKERHUB_REPO    = 'rohankhanal14/crud-frontend'
+
+        // ── SonarQube ─────────────────────────────────────────────────────
+        SONAR_SERVER      = 'sonarqube-server'                      // Jenkins SonarQube config name
+        SONAR_PROJECT_KEY = 'crud-frontend'
+
+
+        
+        // GITOPS_BRANCH     = 'main'
+        // HELM_VALUES_FILE  = 'charts/three-tier-app/values-staging.yaml'
+
+        // ── OWASP ZAP ────────────────────────────────────────────────────
+        // ZAP_TARGET_URL    = 'http://localhost:3000'                  // ⚠ Must point to YOUR app, NOT Jenkins (8080=Jenkins!)
+        // ZAP_IMAGE         = 'ghcr.io/zaproxy/zaproxy:stable'
+
+        // ── Build-time config ─────────────────────────────────────────────
+        // VITE_API_BASE_URL = 'http://staging.crud.local/api'         // baked into React build
+
+        // ── Email ─────────────────────────────────────────────────────────
+        // EMAIL_RECIPIENTS  = 'rohankhanal14r@gmail.com'
+
+        // ── Computed at runtime ───────────────────────────────────────────
+        IMAGE_TAG         = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(8) ?: 'unknown'}"
+    }
+
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        // disableConcurrentBuilds()creds
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timestamps()
+        ansiColor('xterm')
+    }
+
+    stages {
+        // ══════════════════════════════════════════════════════════════════
+        // 1. PREPARE
+        // ══════════════════════════════════════════════════════════════════
+        stage('Prepare') {
+            steps {
+                script {
+                    // Derive full image path based on registry type
+                    echo "═══════════════════════════════════════════════"
+                    echo "  Service:    ${SERVICE_LABEL}"
+                    echo "  Branch:     ${env.BRANCH_NAME ?: env.GIT_BRANCH}"
+                    echo "  Commit:     ${env.GIT_COMMIT?.take(8)}"
+                    echo "  Image:      ${IMAGE_FULL}:${IMAGE_TAG}"
+                    echo "═══════════════════════════════════════════════"
+                }
+                // Verify required tools on the agent
+                sh '''
+                    echo "── Tool Versions ──"
+                    node --version
+                    npm --version
+                    docker --version
+                    trivy --version
+                    sonar-scanner --version 
+                '''
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 2. INSTALL DEPENDENCIES
+        // ══════════════════════════════════════════════════════════════════
+        stage('Install Dependencies') {
+            steps {
+                dir("${SERVICE_DIR}") {
+                    sh 'npm ci'
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 3. LINT
+        // ══════════════════════════════════════════════════════════════════
+        stage('Lint') {
+            steps {
+                dir("${SERVICE_DIR}") {
+                    sh 'npm run lint'
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 4. UNIT TESTS
+        // ══════════════════════════════════════════════════════════════════
+        stage('Unit Tests') {
+            steps {
+                dir("${SERVICE_DIR}") {
+                    sh 'npm test -- --coverage'
+                }
+            }
+            post {
+                always {
+                    dir("${SERVICE_DIR}") {
+                        archiveArtifacts artifacts: 'coverage/**', allowEmptyArchive: true
+                    }
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 5. SONARQUBE SAST ANALYSIS
+        // ══════════════════════════════════════════════════════════════════
+        stage('SonarQube Analysis') {
+            steps {
+                dir("${SERVICE_DIR}") {
+                    withSonarQubeEnv("${SONAR_SERVER}") {
+                        sh """
+                            sonar-scanner
+                        """
+                    }
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 6. SONARQUBE QUALITY GATE
+        // ══════════════════════════════════════════════════════════════════
+        // stage('Quality Gate') {
+        //     steps {
+        //         timeout(time: 5, unit: 'MINUTES') {
+        //             waitForQualityGate abortPipeline: false
+        //         }
+        //     }
+        // }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 7. TRIVY FILESYSTEM SCAN
+        // ══════════════════════════════════════════════════════════════════
+        stage('Trivy FS Scan') {
+            steps {
+                dir("${SERVICE_DIR}") {
+                    sh """
+                        trivy fs \\
+                            --scanners vuln,secret,misconfig \\
+                            --severity HIGH,CRITICAL \\
+                            --exit-code 1 \\
+                            --no-progress \\
+                            --format table \\
+                            .
+                    """
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 8. DOCKER BUILD
+        // ══════════════════════════════════════════════════════════════════
+        stage('Docker Build') {
+            steps {
+                dir("${SERVICE_DIR}") {
+                    sh """
+                        docker build \\
+                            --no-cache \\
+                            -t ${IMAGE_FULL}:${IMAGE_TAG} \\
+                            -t ${IMAGE_FULL}:latest \\
+                            .
+                    """
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 9. TRIVY IMAGE SCAN
+        // ══════════════════════════════════════════════════════════════════
+        stage('Trivy Image Scan') {
+            steps {
+                sh """
+                    trivy image \\
+                        --scanners vuln \\
+                        --severity HIGH,CRITICAL \\
+                        --exit-code 1 \\
+                        --no-progress \\
+                        --format table \\
+                        ${IMAGE_FULL}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 10. PUSH IMAGE (Docker Hub OR ECR)
+        // ══════════════════════════════════════════════════════════════════
+        stage('Push Image') {
+            steps {
+                script {
+                        // Docker Hub: authenticate via Jenkins credentials
+                        withCredentials([
+                            usernamePassword(
+                                credentialsId: "${DOCKERHUB_CREDS}",
+                                usernameVariable: 'DOCKER_USER',
+                                passwordVariable: 'DOCKER_PASS'
+                            )
+                        ]) {
+                            sh '''
+                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                                docker push ${IMAGE_FULL}:${IMAGE_TAG}
+                                docker push ${IMAGE_FULL}:latest
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 11. UPDATE GITOPS REPO (Helm values → triggers Argo CD)
+        // ══════════════════════════════════════════════════════════════════
+        // stage('Update GitOps Repo') {
+        //     // when {
+        //     //     anyOf {
+        //     //         branch 'main'
+        //     //         branch 'develop'
+        //     //     }
+        //     // }
+        //     steps {
+        //         withCredentials([
+        //             usernamePassword(
+        //                 credentialsId: "${GITOPS_CREDS}",
+        //                 usernameVariable: 'GIT_USER',
+        //                 passwordVariable: 'GIT_TOKEN'
+        //             )
+        //         ]) {
+        //             sh """
+        //                 # Clone the GitOps repo
+        //                 rm -rf gitops-repo
+        //                 git clone https://\${GIT_USER}:\${GIT_TOKEN}@${GITOPS_REPO.replace('https://', '')} gitops-repo
+
+        //                 cd gitops-repo
+        //                 git checkout ${GITOPS_BRANCH}
+
+        //                 # Update frontend image tag in staging values
+        //                 yq eval '.frontend.image.repository = "${IMAGE_FULL}"' -i ${HELM_VALUES_FILE}
+        //                 yq eval '.frontend.image.tag = "${IMAGE_TAG}"' -i ${HELM_VALUES_FILE}
+
+        //                 # Commit and push
+        //                 git config user.email "jenkins@ci.local"
+        //                 git config user.name "Jenkins CI"
+        //                 git add ${HELM_VALUES_FILE}
+        //                 git commit -m "ci(frontend): update image to ${IMAGE_FULL}:${IMAGE_TAG} [build #${BUILD_NUMBER}]" || echo "No changes to commit"
+        //                 git push origin ${GITOPS_BRANCH}
+
+        //                 cd ..
+        //                 rm -rf gitops-repo
+        //             """
+        //         }
+        //     }
+        // }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 12. OWASP ZAP DAST (Baseline Scan)
+        // ══════════════════════════════════════════════════════════════════
+    //     stage('OWASP ZAP DAST') {
+    //         // when {
+    //         //     anyOf {
+    //         //         branch 'main'
+    //         //         branch 'develop'
+    //         //     }
+    //         // }
+    //         steps {
+    //             sh """
+    //                 mkdir -p ${WORKSPACE}/zap-reports
+    //                 chmod 777 ${WORKSPACE}/zap-reports
+    //                 chown 1000:1000 ${WORKSPACE}/zap-reports
+
+    //                 docker run --rm \\
+    //                     --network host \\
+    //                     -v ${WORKSPACE}/zap-reports:/zap/wrk/:rw \\
+    //                     -t ${ZAP_IMAGE} \\
+    //                     zap-baseline.py \\
+    //                         -t ${ZAP_TARGET_URL} \\
+    //                         -r zap-frontend-report.html \\
+    //                         -J zap-frontend-report.json \\
+    //                         -w zap-frontend-report.md \\
+    //                         -I || true
+    //             """
+    //             // -I = don't return error for WARN-level findings (only FAIL)
+    //         }
+    //         post {
+    //             always {
+    //                 archiveArtifacts artifacts: 'zap-reports/**', allowEmptyArchive: true
+    //                 publishHTML(target: [
+    //                     reportDir:   'zap-reports',
+    //                     reportFiles: 'zap-frontend-report.html',
+    //                     reportName:  'ZAP Frontend DAST Report',
+    //                     keepAll:     true,
+    //                     alwaysLinkToLastBuild: true,
+    //                     allowMissing: true
+    //                 ])
+    //             }
+    //         }
+    //     }
+    // }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // POST-BUILD ACTIONS
+    // ══════════════════════════════════════════════════════════════════════
+    // post {
+    //     always {
+    //         // Clean up Docker images to free disk space on agent
+    //         sh """
+    //             docker rmi ${IMAGE_FULL}:${IMAGE_TAG} || true
+    //             docker rmi ${IMAGE_FULL}:latest || true
+    //             docker system prune -f --filter "until=24h" || true
+    //         """
+    //         cleanWs()
+    //     }
+
+    //     success {
+    //         echo "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED"
+    //         emailext(
+    //             subject: "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
+    //             body: """
+    //                 <h2 style="color: #28a745;">✅ ${SERVICE_LABEL} Build Succeeded</h2>
+    //                 <table style="border-collapse: collapse; font-family: monospace;">
+    //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
+    //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
+    //                     <tr><td><b>Image Tag:</b></td><td>${IMAGE_TAG}</td></tr>
+    //                     <tr><td><b>Image Repo:</b></td><td>${IMAGE_FULL}</td></tr>
+    //                     <tr><td><b>Registry:</b></td><td>${REGISTRY_TYPE}</td></tr>
+    //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
+    //                 </table>
+    //                 <h3>Reports</h3>
+    //                 <ul>
+    //                     <li><a href="${BUILD_URL}artifact/frontend/coverage/index.html">Coverage Report</a></li>
+    //                     <li><a href="${BUILD_URL}ZAP_20Frontend_20DAST_20Report/">ZAP DAST Report</a></li>
+    //                     <li><a href="${BUILD_URL}console">Console Output</a></li>
+    //                 </ul>
+    //                 <p>GitOps repo updated → Argo CD will auto-sync within 3 minutes.</p>
+    //             """,
+    //             mimeType: 'text/html',
+    //             to: "${EMAIL_RECIPIENTS}"
+    //         )
+    //     }
+
+    //     failure {
+    //         echo "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED"
+    //         emailext(
+    //             subject: "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
+    //             body: """
+    //                 <h2 style="color: #dc3545;">❌ ${SERVICE_LABEL} Build Failed</h2>
+    //                 <table style="border-collapse: collapse; font-family: monospace;">
+    //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
+    //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
+    //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
+    //                     <tr><td><b>Failed Stage:</b></td><td>Check console output</td></tr>
+    //                 </table>
+    //                 <h3>Debugging Links</h3>
+    //                 <ul>
+    //                     <li><a href="${BUILD_URL}console">Console Output (full log)</a></li>
+    //                     <li><a href="${BUILD_URL}artifact/">Build Artifacts (Trivy / ZAP reports)</a></li>
+    //                 </ul>
+    //                 <h3>Common Failure Causes</h3>
+    //                 <ul>
+    //                     <li><b>npm ci:</b> Missing package-lock.json or network timeout</li>
+    //                     <li><b>Unit Tests:</b> Component rendering failures — check test output</li>
+    //                     <li><b>SonarQube:</b> Quality gate failed — open SonarQube dashboard</li>
+    //                     <li><b>Trivy FS:</b> HIGH/CRITICAL CVEs in dependencies — run <code>npm audit</code></li>
+    //                     <li><b>Trivy Image:</b> OS-level CVEs in nginx:alpine — update base image</li>
+    //                     <li><b>Docker Push:</b> Registry authentication failure</li>
+    //                     <li><b>ZAP:</b> Missing security headers — check nginx.conf</li>
+    //                 </ul>
+    //             """,
+    //             mimeType: 'text/html',
+    //             to: "${EMAIL_RECIPIENTS}"
+    //         )
+    //     }
+    // }
+    // post {
+    //     always {
+    //         // Clean up Docker images to free disk space on agent
+    //         sh """
+    //             docker rmi ${IMAGE_FULL}:${IMAGE_TAG} || true
+    //             docker rmi ${IMAGE_FULL}:latest || true
+    //             docker system prune -f --filter "until=24h" || true
+    //         """
+    //         cleanWs()
+    //     }
+
+    //     success {
+    //         echo "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED"
+    //         emailext(
+    //             subject: "✅ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} PASSED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
+    //             body: """
+    //                 <h2 style="color: #28a745;">✅ ${SERVICE_LABEL} Build Succeeded</h2>
+    //                 <table style="border-collapse: collapse; font-family: monospace;">
+    //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
+    //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
+    //                     <tr><td><b>Image Tag:</b></td><td>${IMAGE_TAG}</td></tr>
+    //                     <tr><td><b>Image Repo:</b></td><td>${IMAGE_FULL}</td></tr>
+    //                     <tr><td><b>Registry:</b></td><td>${REGISTRY_TYPE}</td></tr>
+    //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
+    //                 </table>
+    //                 <h3>Reports</h3>
+    //                 <ul>
+    //                     <li><a href="${BUILD_URL}artifact/frontend/coverage/index.html">Coverage Report</a></li>
+    //                     <li><a href="${BUILD_URL}ZAP_20Frontend_20DAST_20Report/">ZAP DAST Report</a></li>
+    //                     <li><a href="${BUILD_URL}console">Console Output</a></li>
+    //                 </ul>
+    //                 <p>GitOps repo updated → Argo CD will auto-sync within 3 minutes.</p>
+    //             """,
+    //             mimeType: 'text/html',
+    //             to: "${EMAIL_RECIPIENTS}"
+    //         )
+    //     }
+
+    //     failure {
+    //         echo "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED"
+    //         emailext(
+    //             subject: "❌ [${SERVICE_LABEL}] Build #${BUILD_NUMBER} FAILED — ${env.BRANCH_NAME ?: env.GIT_BRANCH}",
+    //             body: """
+    //                 <h2 style="color: #dc3545;">❌ ${SERVICE_LABEL} Build Failed</h2>
+    //                 <table style="border-collapse: collapse; font-family: monospace;">
+    //                     <tr><td><b>Branch:</b></td><td>${env.BRANCH_NAME ?: env.GIT_BRANCH}</td></tr>
+    //                     <tr><td><b>Commit:</b></td><td>${env.GIT_COMMIT?.take(8)}</td></tr>
+    //                     <tr><td><b>Duration:</b></td><td>${currentBuild.durationString}</td></tr>
+    //                     <tr><td><b>Failed Stage:</b></td><td>Check console output</td></tr>
+    //                 </table>
+    //                 <h3>Debugging Links</h3>
+    //                 <ul>
+    //                     <li><a href="${BUILD_URL}console">Console Output (full log)</a></li>
+    //                     <li><a href="${BUILD_URL}artifact/">Build Artifacts (Trivy / ZAP reports)</a></li>
+    //                 </ul>
+    //                 <h3>Common Failure Causes</h3>
+    //                 <ul>
+    //                     <li><b>npm ci:</b> Missing package-lock.json or network timeout</li>
+    //                     <li><b>Unit Tests:</b> Component rendering failures — check test output</li>
+    //                     <li><b>SonarQube:</b> Quality gate failed — open SonarQube dashboard</li>
+    //                     <li><b>Trivy FS:</b> HIGH/CRITICAL CVEs in dependencies — run <code>npm audit</code></li>
+    //                     <li><b>Trivy Image:</b> OS-level CVEs in nginx:alpine — update base image</li>
+    //                     <li><b>Docker Push:</b> Registry authentication failure</li>
+    //                     <li><b>ZAP:</b> Missing security headers — check nginx.conf</li>
+    //                 </ul>
+    //             """,
+    //             mimeType: 'text/html',
+    //             to: "${EMAIL_RECIPIENTS}"
+    //         )
+    //     }
+    // }
+}
