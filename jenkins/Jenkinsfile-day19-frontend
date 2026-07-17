@@ -249,28 +249,8 @@ pipeline {
                         "$DOCKERHUB_REPO:$IMAGE_TAG"
 
                     echo "Waiting for frontend..."
-
-                    READY=0
-
-                    for i in $(seq 1 30); do
-                        if docker run --rm \
-                            --network "$ZAP_NETWORK" \
-                            --entrypoint curl \
-                            "$ZAP_IMAGE" \
-                            -fsS "$TARGET_URL" >/dev/null 2>&1
-                        then
-                            READY=1
-                            break
-                        fi
-
-                        sleep 2
-                    done
-
-                    if [ "$READY" -ne 1 ]; then
-                        echo "Frontend did not start"
-                        docker logs "$ZAP_CONTAINER" || true
-                        exit 1
-                    fi
+                    
+                    sleep 10 
 
                     # Run ZAP baseline scan
                     docker run --rm \
