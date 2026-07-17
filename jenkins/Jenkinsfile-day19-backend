@@ -223,43 +223,27 @@ pipeline {
         // ══════════════════════════════════════════════════════════════════
         // 12. OWASP ZAP DAST (Baseline Scan)
         // ══════════════════════════════════════════════════════════════════
-        // stage('OWASP ZAP DAST') {
-        //     when {
-        //         anyOf {
-        //             branch 'main'
-        //             branch 'develop'
-        //         }
-        //     }
-        //     steps {
-        //         sh """
-        //             mkdir -p ${WORKSPACE}/zap-reports
+       stage('BACKEND CONTAINER') {
+            steps {
+                sh '''
+                    docker volume create mongo-data
 
-        //             docker run --rm \\
-        //                 --network host \\
-        //                 -v ${WORKSPACE}/zap-reports:/zap/wrk/:rw \\
-        //                 -t ${ZAP_IMAGE} \\
-        //                 zap-baseline.py \\
-        //                     -t ${ZAP_TARGET_URL} \\
-        //                     -r zap-backend-report.html \\
-        //                     -J zap-backend-report.json \\
-        //                     -w zap-backend-report.md \\
-        //                     -I || true
-        //         """
-        //         // -I = don't return error for WARN-level findings (only FAIL)
-        //     }
-        //     post {
-        //         always {
-        //             archiveArtifacts artifacts: 'zap-reports/**', allowEmptyArchive: true
-        //             publishHTML(target: [
-        //                 reportDir:   'zap-reports',
-        //                 reportFiles: 'zap-backend-report.html',
-        //                 reportName:  'ZAP Backend DAST Report',
-        //                 keepAll:     true,
-        //                 alwaysLinkToLastBuild: true,
-        //                 allowMissing: true
-        //             ])
-        //         }
-        //     }
-        // }
+                    docker run -d \
+                        --name crud-mongodb \
+                        --restart unless-stopped \
+                        -v mongo-data:/data/db \
+                        mongo:7
+
+                   # Start Backend Container
+                    docker run -d \
+                        --name "BACKEND_CONTAINER" \
+                        -p 5000:5000 \
+                        --depends-on crud-mongodb \
+                        "$DOCKERHUB_REPO:$IMAGE_TAG"
+
+                    echo "container Created"
+                '''
+            }
+        }
     }
 }
