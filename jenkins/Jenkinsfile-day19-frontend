@@ -245,6 +245,7 @@ pipeline {
                     docker run -d \
                         --name "$ZAP_CONTAINER" \
                         --network "$ZAP_NETWORK" \
+                        -p 3000:8080 \
                         "$DOCKERHUB_REPO:$IMAGE_TAG"
 
                     echo "Waiting for frontend..."
