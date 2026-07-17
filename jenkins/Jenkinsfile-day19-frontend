@@ -256,6 +256,7 @@ pipeline {
                     docker run --rm \
                         --network "$ZAP_NETWORK" \
                         -v "$WORKSPACE/zap-reports:/zap/wrk/:rw" \
+                        --user root
                         "$ZAP_IMAGE" \
                         zap-baseline.py \
                             -t "$TARGET_URL" \
