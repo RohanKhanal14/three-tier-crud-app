@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'docker && nodejs && trivy' }
+    agent { label 'docker' }
 
     environment {
         // ── Service Identity ──────────────────────────────────────────────
