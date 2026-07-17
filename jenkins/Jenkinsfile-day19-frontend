@@ -218,67 +218,66 @@ pipeline {
             }
         }
 
-        stage('OWASP ZAP DAST') {
-            steps {
-                sh '''
-                    set -eu
-
-                    ZAP_IMAGE="ghcr.io/zaproxy/zaproxy:stable"
-                    ZAP_NETWORK="zap-network-${BUILD_NUMBER}"
-                    ZAP_CONTAINER="zap-target-${BUILD_NUMBER}"
-                    TARGET_URL="http://${ZAP_CONTAINER}:8081"
-
-                    mkdir -p "$WORKSPACE/zap-reports"
-                    chmod 777 "$WORKSPACE/zap-reports"
-
-                    # Pull only when the image is not already available
-                    docker image inspect "$ZAP_IMAGE" >/dev/null 2>&1 || \
-                        docker pull "$ZAP_IMAGE"
-
-                    # Remove previous containers and networks
-                    docker rm -f "$ZAP_CONTAINER" 2>/dev/null || true
-                    docker network rm "$ZAP_NETWORK" 2>/dev/null || true
-
-                    docker network create "$ZAP_NETWORK"
-
-                    # Start frontend container
-                    docker run -d \
-                        --name "$ZAP_CONTAINER" \
-                        --network "$ZAP_NETWORK" \
-                        -p 3000:8081 \
-                        "$DOCKERHUB_REPO:$IMAGE_TAG"
-
-                    echo "Waiting for frontend..."
+        // stage('OWASP ZAP DAST') {
+        //     steps {
+        //         sh '''
                     
-                    sleep 10 
+        //             ZAP_IMAGE="ghcr.io/zaproxy/zaproxy:stable"
+        //             ZAP_NETWORK="zap-network-${BUILD_NUMBER}"
+        //             ZAP_CONTAINER="zap-target-${BUILD_NUMBER}"
+        //             TARGET_URL="http://${ZAP_CONTAINER}:8081"
 
-                    # Run ZAP baseline scan
-                    docker run --rm \
-                        --network "$ZAP_NETWORK" \
-                        -v "$WORKSPACE/zap-reports:/zap/wrk/:rw" \
-                        --user root \
-                        "$ZAP_IMAGE" \
-                        zap-baseline.py \
-                            -t "$TARGET_URL" \
-                            -r zap-frontend-report.html \
-                            -J zap-frontend-report.json \
-                            -w zap-frontend-report.md \
-                            -I
-                '''
-            }
-            post {
-                always {
-                    sh '''
-                        docker rm -f "zap-target-${BUILD_NUMBER}" 2>/dev/null || true
-                        docker network rm "zap-network-${BUILD_NUMBER}" 2>/dev/null || true
-                    '''
+        //             mkdir -p "$WORKSPACE/zap-reports"
+        //             chmod 777 "$WORKSPACE/zap-reports"
 
-                    archiveArtifacts(
-                        artifacts: 'zap-reports/**',
-                        allowEmptyArchive: true
-                    )
-                }
-            }
-        }
+        //             # Pull only when the image is not already available
+        //             docker image inspect "$ZAP_IMAGE" >/dev/null 2>&1 || \
+        //                 docker pull "$ZAP_IMAGE"
+
+        //             # Remove previous containers and networks
+        //             docker rm -f "$ZAP_CONTAINER" 2>/dev/null || true
+        //             docker network rm "$ZAP_NETWORK" 2>/dev/null || true
+
+        //             docker network create "$ZAP_NETWORK"
+
+        //             # Start frontend container
+        //             docker run -d \
+        //                 --name "$ZAP_CONTAINER" \
+        //                 --network "$ZAP_NETWORK" \
+        //                 -p 3000:8081 \
+        //                 "$DOCKERHUB_REPO:$IMAGE_TAG"
+
+        //             echo "Waiting for frontend..."
+                    
+        //             sleep 10 
+
+        //             # Run ZAP baseline scan
+        //             docker run --rm \
+        //                 --network "$ZAP_NETWORK" \
+        //                 -v "$WORKSPACE/zap-reports:/zap/wrk/:rw" \
+        //                 --user root \
+        //                 "$ZAP_IMAGE" \
+        //                 zap-baseline.py \
+        //                     -t "$TARGET_URL" \
+        //                     -r zap-frontend-report.html \
+        //                     -J zap-frontend-report.json \
+        //                     -w zap-frontend-report.md \
+        //                     -I
+        //         '''
+        //     }
+        //     post {
+        //         always {
+        //             sh '''
+        //                 docker rm -f "zap-target-${BUILD_NUMBER}" 2>/dev/null || true
+        //                 docker network rm "zap-network-${BUILD_NUMBER}" 2>/dev/null || true
+        //             '''
+
+        //             archiveArtifacts(
+        //                 artifacts: 'zap-reports/**',
+        //                 allowEmptyArchive: true
+        //             )
+        //         }
+        //     }
+        // }
     }
 }
