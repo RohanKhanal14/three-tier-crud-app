@@ -226,7 +226,7 @@ pipeline {
                     ZAP_IMAGE="ghcr.io/zaproxy/zaproxy:stable"
                     ZAP_NETWORK="zap-network-${BUILD_NUMBER}"
                     ZAP_CONTAINER="zap-target-${BUILD_NUMBER}"
-                    TARGET_URL="http://${ZAP_CONTAINER}:3000"
+                    TARGET_URL="http://${ZAP_CONTAINER}:8081"
 
                     mkdir -p "$WORKSPACE/zap-reports"
                     chmod 777 "$WORKSPACE/zap-reports"
@@ -245,7 +245,7 @@ pipeline {
                     docker run -d \
                         --name "$ZAP_CONTAINER" \
                         --network "$ZAP_NETWORK" \
-                        -p 3000:8080 \
+                        -p 3000:8081 \
                         "$DOCKERHUB_REPO:$IMAGE_TAG"
 
                     echo "Waiting for frontend..."
