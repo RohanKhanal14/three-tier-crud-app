@@ -4,7 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Build-time API URL (baked into the static bundle)
-ARG VITE_API_BASE_URL=http://localhost:5000
+ARG VITE_API_BASE_URL=http://backend-svc:5000
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 # Install dependencies
@@ -37,9 +37,9 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
 
 USER nginx
 
-EXPOSE 8081
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:8081/ || exit 1
+    CMD wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
