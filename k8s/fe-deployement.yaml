@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: rohankhanal14/k8s-day-24:k8s-f
+          image: rohankhanal14/k8s-day-24:k8s-ff
           ports:
             - containerPort: 8080
           readinessProbe:
