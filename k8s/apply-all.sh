@@ -37,12 +37,17 @@ BACKEND_MANIFESTS=(
   "backend/be-config.yaml"
   "backend/be-deployement.yaml"
   "backend/be-svc.yaml"
+  "backend/be-secret.yaml"
+
 )
 
 # frontend depends on backend
 FRONTEND_MANIFESTS=(
   "frontend/fe-deployement.yaml"
   "frontend/fe-svc.yaml"
+  "../k8s/network/ingress.yaml"
+  "../k8s/network/policy.yaml"
+
 )
 
 for manifest in "${DB_MANIFESTS[@]}"; do

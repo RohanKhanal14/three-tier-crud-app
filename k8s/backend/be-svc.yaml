@@ -6,11 +6,10 @@ metadata:
     app: backend
     tier: backend
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: backend
   ports:
     - port: 5000
       targetPort: 5000
-      nodePort: 30050
       name: http

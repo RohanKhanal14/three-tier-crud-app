@@ -2,8 +2,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
 const promClient = require('prom-client');
+const { randomUUID } = require('crypto');
 
 // Load environment variables in non-test environments
 if (process.env.NODE_ENV !== 'test') {
@@ -15,6 +15,38 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/three-tier-crud';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const SERVICE_NAME = process.env.SERVICE_NAME || 'crud-backend';
+const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
+
+// ── Structured Logging ─────────────────────────────────────────────────────────
+// Emit one JSON object per line to stdout/stderr. Loki can parse these with `| json`.
+const LOG_LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
+const configuredLogLevel = LOG_LEVELS[LOG_LEVEL] || LOG_LEVELS.info;
+
+function serializeError(err) {
+  if (!err) return undefined;
+  return {
+    type: err.name,
+    message: err.message,
+    ...(err.code !== undefined && { code: err.code }),
+    ...(NODE_ENV !== 'production' && err.stack && { stack: err.stack }),
+  };
+}
+
+function log(level, event, fields = {}) {
+  if (LOG_LEVELS[level] < configuredLogLevel) return;
+
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    service: SERVICE_NAME,
+    environment: NODE_ENV,
+    event,
+    ...fields,
+  };
+  const output = JSON.stringify(entry);
+  (level === 'error' ? process.stderr : process.stdout).write(`${output}\n`);
+}
 
 // ── Express App Setup ──────────────────────────────────────────────────────────
 const app = express();
@@ -23,9 +55,43 @@ const app = express();
 app.use(helmet());
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
-if (NODE_ENV !== 'test') {
-  app.use(morgan('combined'));
-}
+
+// Correlate every request and log a single completion event after the response.
+app.use((req, res, next) => {
+  const incomingRequestId = req.get('x-request-id');
+  const requestId =
+    incomingRequestId && incomingRequestId.length <= 128
+      ? incomingRequestId
+      : randomUUID();
+  const startedAt = process.hrtime.bigint();
+
+  req.requestId = requestId;
+  res.set('x-request-id', requestId);
+
+  res.on('finish', () => {
+    if (NODE_ENV === 'test') return;
+
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    const route = req.route?.path
+      ? `${req.baseUrl || ''}${req.route.path}`
+      : 'unmatched';
+    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+
+    log(level, 'http_request_completed', {
+      request_id: requestId,
+      http: {
+        method: req.method,
+        route,
+        status_code: res.statusCode,
+        duration_ms: Number(durationMs.toFixed(2)),
+        response_size_bytes: Number(res.get('content-length')) || undefined,
+        user_agent: req.get('user-agent') || undefined,
+      },
+    });
+  });
+
+  next();
+});
 
 // ── Prometheus Metrics ─────────────────────────────────────────────────────────
 const collectDefaultMetrics = promClient.collectDefaultMetrics;
@@ -140,7 +206,10 @@ app.get('/api/items', async (req, res) => {
     const items = await Item.find(filter).sort({ createdAt: -1 });
     res.json(items);
   } catch (err) {
-    console.error('Error fetching items:', err.message);
+    log('error', 'items_fetch_failed', {
+      request_id: req.requestId,
+      error: serializeError(err),
+    });
     res.status(500).json({ error: 'Failed to fetch items' });
   }
 });
@@ -158,7 +227,11 @@ app.get('/api/items/:id', async (req, res) => {
     }
     res.json(item);
   } catch (err) {
-    console.error('Error fetching item:', err.message);
+    log('error', 'item_fetch_failed', {
+      request_id: req.requestId,
+      item_id: req.params.id,
+      error: serializeError(err),
+    });
     res.status(500).json({ error: 'Failed to fetch item' });
   }
 });
@@ -180,7 +253,10 @@ app.post('/api/items', async (req, res) => {
       const messages = Object.values(err.errors).map((e) => e.message);
       return res.status(400).json({ error: messages.join(', ') });
     }
-    console.error('Error creating item:', err.message);
+    log('error', 'item_create_failed', {
+      request_id: req.requestId,
+      error: serializeError(err),
+    });
     res.status(500).json({ error: 'Failed to create item' });
   }
 });
@@ -217,7 +293,11 @@ app.put('/api/items/:id', async (req, res) => {
       const messages = Object.values(err.errors).map((e) => e.message);
       return res.status(400).json({ error: messages.join(', ') });
     }
-    console.error('Error updating item:', err.message);
+    log('error', 'item_update_failed', {
+      request_id: req.requestId,
+      item_id: req.params.id,
+      error: serializeError(err),
+    });
     res.status(500).json({ error: 'Failed to update item' });
   }
 });
@@ -235,7 +315,11 @@ app.delete('/api/items/:id', async (req, res) => {
     }
     res.json({ message: 'Item deleted successfully' });
   } catch (err) {
-    console.error('Error deleting item:', err.message);
+    log('error', 'item_delete_failed', {
+      request_id: req.requestId,
+      item_id: req.params.id,
+      error: serializeError(err),
+    });
     res.status(500).json({ error: 'Failed to delete item' });
   }
 });
@@ -246,8 +330,11 @@ app.use((_req, res) => {
 });
 
 // Global error handler – never expose stack traces in production
-app.use((err, _req, res, _next) => {
-  console.error('Unhandled error:', err);
+app.use((err, req, res, _next) => {
+  log('error', 'unhandled_error', {
+    request_id: req.requestId,
+    error: serializeError(err),
+  });
   res.status(500).json({
     error: NODE_ENV === 'production' ? 'Internal server error' : err.message,
   });
@@ -259,24 +346,24 @@ let server;
 async function startServer() {
   try {
     await mongoose.connect(MONGO_URI);
-    console.log('✅ Connected to MongoDB');
+    log('info', 'mongodb_connected');
 
     server = app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT} [${NODE_ENV}]`);
+      log('info', 'server_started', { port: Number(PORT) });
     });
   } catch (err) {
-    console.error('❌ Failed to connect to MongoDB:', err.message);
+    log('error', 'mongodb_connection_failed', { error: serializeError(err) });
     process.exit(1);
   }
 }
 
 // Graceful shutdown
 async function gracefulShutdown(signal) {
-  console.log(`\n${signal} received. Shutting down gracefully…`);
+  log('info', 'shutdown_started', { signal });
   if (server) {
     server.close(async () => {
       await mongoose.connection.close();
-      console.log('🛑 Server closed');
+      log('info', 'shutdown_completed', { signal });
       process.exit(0);
     });
   } else {

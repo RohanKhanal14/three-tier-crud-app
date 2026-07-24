@@ -1,0 +1,126 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# PRACTICAL 3 — NetworkPolicies
+# Requires a CNI that enforces NetworkPolicy (Minikube's default CNI does NOT;
+# start minikube with: minikube start --cni=calico  — see commands below)
+#
+# Model:
+#   default-deny-all      -> deny everything by default
+#   allow-dns              -> let every pod resolve DNS (kube-dns), or nothing works
+#   frontend-ingress       -> only the ingress-nginx controller can reach frontend:8080
+#   backend-ingress        -> only frontend pods can reach backend:5000
+#   mongodb-ingress        -> only backend pods can reach mongodb:27017
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── 1. Deny all ingress & egress by default for every pod in the namespace ──
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# ── 2. Allow every pod to reach kube-dns (needed for DNS resolution) ────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# ── 3. mongodb: only accept traffic from backend pods, on port 27017 ────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mongodb-allow-from-backend
+spec:
+  podSelector:
+    matchLabels:
+      app: mongodb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 27017
+
+---
+# ── 4. backend: only accept traffic from frontend pods, on port 5000,       ─
+#       AND allow backend's own egress to mongodb                          ─
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-from-frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 5000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mongodb
+      ports:
+        - protocol: TCP
+          port: 27017
+
+---
+# ── 5. frontend: only accept traffic from the ingress-nginx controller,     ─
+#       AND allow frontend's own egress to backend                         ─
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-allow-from-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 5000

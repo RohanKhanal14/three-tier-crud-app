@@ -24,6 +24,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: backend-config
+            - secretRef:
+                name: backend-secret
           readinessProbe:
             httpGet:
               path: /health
@@ -31,7 +33,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 30
             timeoutSeconds: 5
-            failureThreshold: 3
+            failureThreshold: 7
           livenessProbe:
             httpGet:
               path: /health
@@ -39,4 +41,4 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 30
             timeoutSeconds: 5
-            failureThreshold: 3
+            failureThreshold: 7
