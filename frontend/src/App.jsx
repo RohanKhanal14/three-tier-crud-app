@@ -67,7 +67,7 @@ export default function App() {
         <header style={styles.header}>
           <div style={styles.headerContent}>
             <h1 style={styles.logo}>
-              <span style={styles.logoIcon}>📦</span> CRUD Manager
+              <span style={styles.logoIcon}>📦</span> Hello ARGO CD
             </h1>
             <p style={styles.tagline}>
               Manage your items with a clean, modern interface
@@ -159,7 +159,7 @@ const globalStyles = `
   html { scroll-behavior: smooth; }
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: linear-gradient(135deg, #f5f7fa, #e4e8f0);
+    background: linear-gradient(135deg, #f3e8ff, #e0e7ff);
     min-height: 100vh;
     color: #1a1a2e;
     -webkit-font-smoothing: antialiased;

@@ -133,7 +133,7 @@ export default function ItemForm({ editingItem, onSubmit, onCancel }) {
 
 const styles = {
   form: {
-    background: 'linear-gradient(135deg, #667eea08, #764ba208)',
+    background: 'linear-gradient(135deg, #dcfce7, #ccfbf1);',
     borderRadius: '20px',
     padding: '28px',
     border: '1px solid #e8e8f0',
